@@ -8,8 +8,10 @@ This repository contains step-by-step documentation and configuration guidelines
 
 The cluster consists of 3 dedicated virtual machines acting in a Primary-Standby architecture with automated failover tracking:
 [ Client Application ]
+
                 │
                 ▼
+
    ┌─────────────────────────┐
    │   Node 1: Primary       │
    │   (Read / Write)        │
