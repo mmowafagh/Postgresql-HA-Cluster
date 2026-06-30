@@ -1,0 +1,417 @@
+=======================================================================
+POSTGRESQL 16 AND REPMGR HIGH-AVAILABILITY CLUSTER DOCUMENTATION
+=======================================================================
+
+-----------------------------------------------------------------------
+PART 1: POSTGRESQL 16 AND REPMGR INSTALLATION GUIDE
+-----------------------------------------------------------------------
+
+Step 1: Update the Server
+Before installing any software, update your system packages to the latest version.
+Run this command:
+sudo apt update && sudo apt upgrade -y
+
+Step 2: Install Basic Packages
+Install some small tools that are required for the installation process.
+Run this command:
+sudo apt install -y curl ca-certificates gnupg
+
+Step 3: Add PostgreSQL Official Repository
+To get PostgreSQL 16 and the correct repmgr version, you must add the official PostgreSQL repository to Ubuntu.
+
+1. Create a directory for the repository key:
+sudo install -d /etc/apt/keyrings
+
+2. Download and import the repository signing key:
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+
+3. Add the repository to your system configuration:
+echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+
+Step 4: Install PostgreSQL 16 and repmgr
+Now, update your package repository list again and install the specific version of PostgreSQL and repmgr.
+Run this command:
+sudo apt update
+sudo apt install -y postgresql-16 postgresql-16-repmgr
+
+Step 5: Verify the Installation
+Check if both services are installed correctly.
+
+1. Check PostgreSQL status:
+systemctl status postgresql@16-main
+(Note: It should show "active (running)" in green.)
+
+2. Check repmgr version:
+/usr/lib/postgresql/16/bin/repmgr --version
+
+
+-----------------------------------------------------------------------
+PART 2: POSTGRESQL AND REPMGR CONFIGURATION
+-----------------------------------------------------------------------
+
+In this part, we will configure 3 important files on ALL 3 NODES:
+1. postgresql.conf (Database settings)
+2. pg_hba.conf (Network permission settings)
+3. repmgr.conf (Cluster manager settings)
+
+Step 6: Configure PostgreSQL Main Settings (postgresql.conf)
+You need to change some settings so PostgreSQL can talk to other servers and allow replication.
+
+1. Open the file:
+sudo nano /etc/postgresql/16/main/postgresql.conf
+
+2. Find these settings, uncomment them (remove the # symbol), and change them. If you cannot find them, just add these lines to the very end of the file:
+
+listen_addresses = '*'
+wal_level = replica
+max_wal_senders = 10
+max_replication_slots = 10
+hot_standby = on
+archive_mode = on
+archive_command = '/bin/true'
+
+3. Save and close the file (Ctrl+O, Enter, then Ctrl+X).
+
+Step 7: Configure Network Access (pg_hba.conf)
+By default, PostgreSQL does not trust external servers. We must tell it to trust the connection from our 3 nodes.
+
+1. Open the file:
+sudo nano /etc/postgresql/16/main/pg_hba.conf
+
+2. Add these lines to the end of the file:
+
+local   replication     repmgr                                  trust
+host    replication     repmgr          192.168.192.0/24        trust
+host    repmgr          repmgr          192.168.192.0/24        trust
+
+3. Save and close the file.
+
+Step 8: Configure repmgr (repmgr.conf)
+This file tells repmgr who it is and how to connect to other nodes. This file is UNIQUE for each node.
+
+1. Open the file:
+sudo nano /etc/repmgr/repmgr.conf
+
+2. Delete everything inside and paste the configuration based on the node you are configuring:
+
+### For Node 1 (192.168.192.21):
+node_id=1
+node_name='postgres-1'
+conninfo='host=192.168.192.21 user=repmgr dbname=repmgr connect_timeout=2'
+data_directory='/var/lib/postgresql/16/main'
+pg_bindir='/usr/lib/postgresql/16/bin'  
+#Path to PostgreSQL binary executables (like pg_rewind)
+priority=100
+failover=automatic
+# Enable automatic failover if the master server goes down
+promote_command='repmgr standby promote -f /etc/repmgr/repmgr.conf --log-to-file'
+# Command to turn this standby node into the new master
+follow_command='repmgr standby follow -f /etc/repmgr/repmgr.conf --log-to-file --upstream-node-id=%n'
+# Command to make this standby node follow the new master
+service_start_command = 'sudo systemctl start postgresql'
+# Command to start the PostgreSQL service
+service_stop_command = 'sudo systemctl stop postgresql'	
+# Command to stop the PostgreSQL service
+service_restart_command = 'sudo systemctl restart postgresql'
+# Command to restart the PostgreSQL service
+service_reload_command = 'sudo systemctl reload postgresql'
+# Command to reload configuration without restarting the database
+reconnect_attempts=4
+# How many times to try connecting to the master before giving up
+reconnect_interval=5
+# Time to wait (in seconds) between each connection attempt
+### For Node 2 (192.168.192.22):
+node_id=2
+node_name='node2'
+conninfo='host=192.168.192.22 dbname=repmgr user=repmgr connect_timeout=2'
+data_directory='/var/lib/postgresql/16/main'
+pg_bindir='/usr/lib/postgresql/16/bin'  
+#Path to PostgreSQL binary executables (like pg_rewind)
+priority=100
+failover=automatic
+# Enable automatic failover if the master server goes down
+promote_command='repmgr standby promote -f /etc/repmgr/repmgr.conf --log-to-file'
+# Command to turn this standby node into the new master
+follow_command='repmgr standby follow -f /etc/repmgr/repmgr.conf --log-to-file --upstream-node-id=%n'
+# Command to make this standby node follow the new master
+service_start_command = 'sudo systemctl start postgresql'
+# Command to start the PostgreSQL service
+service_stop_command = 'sudo systemctl stop postgresql'	
+# Command to stop the PostgreSQL service
+service_restart_command = 'sudo systemctl restart postgresql'
+# Command to restart the PostgreSQL service
+service_reload_command = 'sudo systemctl reload postgresql'
+# Command to reload configuration without restarting the database
+reconnect_attempts=4
+# How many times to try connecting to the master before giving up
+reconnect_interval=5
+# Time to wait (in seconds) between each connection attempt
+
+### For Node 3 (192.168.192.23):
+node_id=3
+node_name='node3'
+conninfo='host=192.168.192.23 dbname=repmgr user=repmgr connect_timeout=2'
+data_directory='/var/lib/postgresql/16/main'
+pg_bindir='/usr/lib/postgresql/16/bin'  
+#Path to PostgreSQL binary executables (like pg_rewind)
+priority=100
+failover=automatic
+# Enable automatic failover if the master server goes down
+promote_command='repmgr standby promote -f /etc/repmgr/repmgr.conf --log-to-file'
+# Command to turn this standby node into the new master
+follow_command='repmgr standby follow -f /etc/repmgr/repmgr.conf --log-to-file --upstream-node-id=%n'
+# Command to make this standby node follow the new master
+service_start_command = 'sudo systemctl start postgresql'
+# Command to start the PostgreSQL service
+service_stop_command = 'sudo systemctl stop postgresql'	
+# Command to stop the PostgreSQL service
+service_restart_command = 'sudo systemctl restart postgresql'
+# Command to restart the PostgreSQL service
+service_reload_command = 'sudo systemctl reload postgresql'
+# Command to reload configuration without restarting the database
+reconnect_attempts=4
+# How many times to try connecting to the master before giving up
+reconnect_interval=5
+# Time to wait (in seconds) between each connection attempt
+
+3. Save and close the file.
+
+Step 9: Restart PostgreSQL to Apply Changes
+Now, restart the database service on ALL nodes to apply the new configurations.
+Run this command:
+sudo systemctl restart postgresql@16-main
+
+
+-----------------------------------------------------------------------
+PART 3: SSH AND DATABASE SECURITY SETUP
+-----------------------------------------------------------------------
+
+Follow these steps to allow the servers to talk to each other automatically without asking for passwords.
+
+Step 10: Setup SSH Without Password (Passwordless SSH)
+The postgres user on every node must be able to connect to the other nodes using SSH without entering a password.
+Perform these steps on ALL 3 NODES:
+
+1. Switch to the postgres user:
+sudo -i -u postgres
+
+2. Generate a new SSH key (Press Enter for all questions, do not type a password):
+ssh-keygen -t rsa -b 4000
+
+3. View the public key and copy the output text:
+cat ~/.ssh/id_rsa.pub
+
+4. On every node, open the authorized keys file:
+nano ~/.ssh/authorized_keys
+(Paste the keys from ALL 3 NODES inside this file, save, and close it.)
+
+5. Give correct permissions to the file:
+chmod 600 ~/.ssh/authorized_keys
+
+6. Test it: Inside the postgres user, try to connect to other nodes. It must not ask for a password:
+ssh 192.168.192.22
+(Type "exit" to go back after a successful test).
+
+Step 11: Setup Database Password File (.pgpass)
+PostgreSQL needs to connect to other database nodes without asking for a password.
+Perform these steps on ALL 3 NODES:
+
+1. Make sure you are logged in as the postgres user (sudo -i -u postgres).
+
+2. Open the .pgpass file:
+nano ~/.pgpass
+
+3. Paste these lines inside the file (replace 'your_secret_password' with your real password):
+192.168.192.21:5432:repmgr:repmgr:your_secret_password
+192.168.192.22:5432:repmgr:repmgr:your_secret_password
+192.168.192.23:5432:repmgr:repmgr:your_secret_password
+192.168.192.21:5432:replication:repmgr:your_secret_password
+192.168.192.22:5432:replication:repmgr:your_secret_password
+192.168.192.23:5432:replication:repmgr:your_secret_password
+
+4. Save, close, and give the file strict permissions:
+chmod 600 ~/.pgpass
+
+Step 12: Create repmgr User and Database (ONLY on Node 1)
+Run these commands ONLY on Node 1 (Primary) to set up the repmgr metadata.
+
+1. Log in as the postgres user on Node 1.
+2. Run these commands to create the user and database:
+createuser -s repmgr
+createdb -O repmgr repmgr
+
+3. Set the password for the repmgr user (use the same password from the .pgpass file):
+psql -c "ALTER USER repmgr PASSWORD 'your_secret_password';"
+
+Step 13: Register Node 1 as Primary (ONLY on Node 1)
+Tell repmgr that Node 1 is the main leader of the cluster.
+Run this command on Node 1 as the postgres user:
+repmgr -f /etc/repmgr/repmgr.conf primary register
+
+To verify, check the cluster status:
+repmgr -f /etc/repmgr/repmgr.conf cluster show
+
+
+-----------------------------------------------------------------------
+PART 4: STANDBY CLONING AND SYSTEMD AUTOMATION SERVICES
+-----------------------------------------------------------------------
+
+Follow these steps to sync Node 2 and Node 3 with the Primary, and configure the boot scripts to prevent system deadlocks.
+
+Step 14: Clone and Register Standby Nodes (On Node 2 and Node 3)
+Run these commands on Node 2 and Node 3 to copy all database data from Node 1.
+
+1. Stop the default blank PostgreSQL service:
+sudo systemctl stop postgresql@16-main
+
+2. Switch to the postgres user:
+sudo -i -u postgres
+
+3. Delete the empty default data directory:
+rm -rf /var/lib/postgresql/16/main/*
+
+4. Clone the data from Node 1:
+repmgr -h 192.168.192.21 -U repmgr -d repmgr -f /etc/repmgr/repmgr.conf standby clone --force
+
+5. Exit the postgres user:
+exit
+
+6. Start the PostgreSQL service again:
+sudo systemctl start postgresql@16-main
+
+7. Switch back to the postgres user and register the node:
+sudo -i -u postgres
+repmgr -f /etc/repmgr/repmgr.conf standby register --force
+
+8. Verify the cluster status:
+repmgr -f /etc/repmgr/repmgr.conf cluster show
+
+Step 15: Create the Anti-Deadlock Boot Script (On ALL 3 NODES)
+This custom script prevents PostgreSQL from freezing or throwing "protocol errors" when a crashed node reboots and rejoins the cluster.
+
+1. Create and open the script file:
+sudo nano /etc/repmgr/repmgr_boot_check.sh
+
+2. Paste this exact code inside the file:
+#!/bin/bash
+echo "=== Starting PostgreSQL Pre-Boot Check ==="
+LOCAL_IP=$(hostname -I | awk '{print $1}')
+PRIMARY_IP=""
+
+echo "Enforcing clean state by stopping any lingering local instances..."
+sudo pg_ctlcluster 16 main stop --force >/dev/null 2>&1
+sleep 2
+
+echo "Scanning cluster nodes..."
+for ip in 192.168.192.21 192.168.192.22 192.168.192.23; do
+    if [ "$ip" == "$LOCAL_IP" ]; then
+        continue
+    fi
+
+    if sudo -u postgres HOME=/var/lib/postgresql PGPASSFILE=/var/lib/postgresql/.pgpass pg_isready -h $ip -p 5432 -q; then
+        is_recovery=$(sudo -u postgres HOME=/var/lib/postgresql PGPASSFILE=/var/lib/postgresql/.pgpass psql -h $ip -p 5432 -U repmgr -d repmgr -Atc "SELECT pg_is_in_recovery()" 2>/dev/null)
+        if [ "$is_recovery" == "f" ]; then
+            PRIMARY_IP=$ip
+            break
+        fi
+    fi
+done
+
+if [ ! -z "$PRIMARY_IP" ]; then
+    echo "Found active remote Primary at $PRIMARY_IP."
+    
+    TEMP_CONF="/tmp/repmgr_deadlock_bypass.conf"
+    cp /etc/repmgr/repmgr.conf $TEMP_CONF
+    sed -i '/service_start_command/d' $TEMP_CONF
+    sed -i '/service_stop_command/d' $TEMP_CONF
+    
+    echo "service_start_command='pg_ctlcluster --skip-systemctl-redirect 16 main start'" >> $TEMP_CONF
+    echo "service_stop_command='pg_ctlcluster --skip-systemctl-redirect 16 main stop'" >> $TEMP_CONF
+    chown postgres:postgres $TEMP_CONF
+
+    echo "Executing node rejoin via bypass configuration..."
+    sudo -u postgres HOME=/var/lib/postgresql PGPASSFILE=/var/lib/postgresql/.pgpass repmgr -f $TEMP_CONF node rejoin -d "host=$PRIMARY_IP dbname=repmgr user=repmgr" --force-rewind
+    sudo -u postgres HOME=/var/lib/postgresql PGPASSFILE=/var/lib/postgresql/.pgpass repmgr -f $TEMP_CONF standby register --force
+    
+    echo "Rejoin complete. Stopping temporary instance to hand over clean control to Systemd..."
+    sudo pg_ctlcluster 16 main stop --force >/dev/null 2>&1
+    rm -f $TEMP_CONF
+    sleep 2
+else
+    echo "No remote active Primary found. Safe to boot local instance normally."
+fi
+
+echo "=== Pre-Boot Check Finished Successfully ==="
+exit 0
+
+3. Save and close the file. Make it executable:
+sudo chmod +x /etc/repmgr/repmgr_boot_check.sh
+
+Step 16: Configure Systemd Service Override (On ALL 3 NODES)
+We tell Systemd to run our script automatically right before PostgreSQL starts.
+
+1. Create the systemd override directory:
+sudo mkdir -p /etc/systemd/system/postgresql@16-main.service.d
+
+2. Create and edit the override configuration file:
+sudo nano /etc/systemd/system/postgresql@16-main.service.d/override.conf
+
+3. Paste this configuration inside:
+[Unit]
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStartPre=/bin/bash /etc/repmgr/repmgr_boot_check.sh
+
+4. Save and close the file. Reload Systemd:
+sudo systemctl daemon-reload
+
+Step 17: Enable Automatic Failover Daemon (repmgrd) (On ALL 3 NODES)
+The repmgrd service monitors the cluster. If the Primary dies, it picks a new leader.
+
+1. Enable the service:
+sudo systemctl enable repmgr16.service
+
+2. Start the service:
+sudo systemctl start repmgr16.service
+
+3. Verify it is running properly:
+sudo systemctl status repmgr16.service
+(Note: It should show "active (running)" in green.)
+
+
+-----------------------------------------------------------------------
+PART 5: TESTING FAILOVER AND REJOINING NODES
+-----------------------------------------------------------------------
+
+This section guides you through testing your cluster's high availability by simulating a crash and automatic rejoin.
+
+Step 18: Simulate a Primary Server Failure
+Go to Node 1 and run this command to stop the database manually:
+sudo systemctl stop postgresql@16-main
+
+Step 19: Verify Automatic Promotion (Check the New Leader)
+Wait around 15 to 20 seconds. Go to Node 2 or Node 3, switch to the postgres user, and check the status:
+sudo -i -u postgres
+repmgr -f /etc/repmgr/repmgr.conf cluster show
+
+What you should see in the output:
+- One of the standby nodes (e.g., node2) will now show as the new "primary".
+- node1 will display a status of "failed" or "unreachable".
+
+Step 20: Bring the Old Primary (Node 1) Back Safely
+Go back to Node 1 and start the service normally:
+sudo systemctl start postgresql@16-main
+
+(Our custom script will automatically trigger, sync the old data with pg_rewind, stop the temporary process, and let Systemd bring PostgreSQL back cleanly as a Standby node.)
+
+Step 21: Final Cluster Verification
+Run this command on any node to confirm everything is back online and stable:
+sudo -i -u postgres repmgr -f /etc/repmgr/repmgr.conf cluster show
+
+Expected Healthy Output:
+- The new node (e.g., Node 2) is listed as the primary.
+- Node 1 is back online, listed as a standby, and properly following the new primary.
+- All statuses are green and healthy.
+=======================================================================
