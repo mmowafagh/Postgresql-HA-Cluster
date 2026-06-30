@@ -1,9 +1,23 @@
-PostgreSQL 16 and repmgr Installation Guide (3-Node Cluster)
-This document explains how to install PostgreSQL 16 and repmgr on Ubuntu servers. Follow these steps on all 3 nodes in your cluster.
-Setup Details
- Node 1 IP: ⁠192.168.192.21⁠
- Node 2 IP: ⁠192.168.192.22⁠
- Node 3 IP: ⁠192.168.192.23⁠
- OS: Ubuntu
- PostgreSQL Version: 16
+# Production-Ready PostgreSQL 16 HA Cluster with repmgr
 
+This repository contains step-by-step documentation and configuration guidelines for deploying a highly available **PostgreSQL 16** database cluster with **repmgr** (Replication Manager) for automatic failover on Ubuntu servers.
+
+---
+
+## 🏗️ Cluster Architecture
+
+The cluster consists of 3 dedicated virtual machines acting in a Primary-Standby architecture with automated failover tracking:
+[ Client Application ]
+                │
+                ▼
+   ┌─────────────────────────┐
+   │   Node 1: Primary       │
+   │   (Read / Write)        │
+   └───────────┬─────────────┘
+               │
+     ┌─────────┴─────────┐
+     ▼                   ▼
+┌─────────────────┐ ┌─────────────────┐
+│ Node 2: Standby │ │ Node 3: Standby │
+│   (Read Only)   │ │   (Read Only)   │
+└─────────────────┘ └─────────────────┘
